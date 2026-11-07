@@ -954,6 +954,18 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
         if (IsPixelFormatASTC(image_format) && !device.IsOptimalAstcSupported()) {
             view_formats[index_a].push_back(VK_FORMAT_A8B8G8R8_UNORM_PACK32);
         }
+        if (!device.IsOptimalBcnSupported() &&
+            (image_format == PixelFormat::BC1_RGBA_SRGB || image_format == PixelFormat::BC2_SRGB ||
+             image_format == PixelFormat::BC3_SRGB)) {
+            // Host-decoded sRGB BCn images are created as UNORM but sampled through an sRGB view.
+            // Those formats are not view-compatible in the BCn tables, so the image would not be
+            // mutable without this entry.
+            auto& formats = view_formats[index_a];
+            if (std::find(formats.begin(), formats.end(), VK_FORMAT_A8B8G8R8_UNORM_PACK32) ==
+                formats.end()) {
+                formats.push_back(VK_FORMAT_A8B8G8R8_UNORM_PACK32);
+            }
+        }
         for (size_t index_b = 0; index_b < VideoCore::Surface::MaxPixelFormat; index_b++) {
             const auto view_format = static_cast<PixelFormat>(index_b);
             if (VideoCore::Surface::IsViewCompatible(image_format, view_format, false, true)) {

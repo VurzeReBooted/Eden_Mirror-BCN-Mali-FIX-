@@ -198,16 +198,27 @@ static bool is_nce_enabled = false;
 
 void SetNceEnabled(bool is_39bit) {
     const bool is_nce_selected = values.cpu_backend.GetValue() == CpuBackend::Nce;
-    if (is_nce_selected && !IsFastmemEnabled()) {
-        LOG_WARNING(Common, "Fastmem is required to natively execute code in a performant manner, "
-                            "falling back to Dynarmic");
+    const bool is_fastmem = IsFastmemEnabled();
+    is_nce_enabled = is_fastmem && is_nce_selected && is_39bit;
+
+#if defined(__linux__) && defined(ARCHITECTURE_arm64)
+    const int page_size = getpagesize();
+#else
+    const int page_size = 0; // Not queried on this platform
+#endif
+    const auto message = fmt::format(
+        "CPU backend: selected={}, cpu_accuracy={}, fastmem={}, 39-bit address space={}, "
+        "host page size={}, effective={}",
+        is_nce_selected ? "NCE" : "Dynarmic", static_cast<int>(values.cpu_accuracy.GetValue()),
+        is_fastmem, is_39bit, page_size, is_nce_enabled ? "NCE" : "Dynarmic (JIT)");
+    if (is_nce_selected && !is_nce_enabled) {
+        LOG_WARNING(Common, "NCE unavailable ({}), falling back to Dynarmic. {}",
+                    !is_fastmem ? "fastmem is required for native execution"
+                                : "program does not use the 39-bit address space",
+                    message);
+    } else {
+        LOG_INFO(Common, "{}", message);
     }
-    if (is_nce_selected && !is_39bit) {
-        LOG_WARNING(
-            Common,
-            "Program does not utilize 39-bit address space, unable to natively execute code");
-    }
-    is_nce_enabled = IsFastmemEnabled() && is_nce_selected && is_39bit;
 }
 
 bool IsNceEnabled() {
