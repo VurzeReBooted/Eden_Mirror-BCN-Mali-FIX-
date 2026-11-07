@@ -9,8 +9,9 @@
 #include <span>
 #include <bc_decoder.h>
 
-#include "common/div_ceil.h"
+#include "common/assert.h"
 #include "common/common_types.h"
+#include "common/div_ceil.h"
 #include "video_core/texture_cache/decode_bc.h"
 
 namespace VideoCommon {
@@ -74,6 +75,9 @@ void DecompressBlocks(std::span<const u8> input, std::span<u8> output, BufferIma
     // to whole 4x4 blocks, so every slice has to be decoded on its own.
     const u32 slices = copy.image_extent.depth * copy.image_subresource.num_layers;
     const u32 blocks_x = Common::DivCeil(width, BLOCK_SIZE);
+    // ConvertImage asserts buffer_row_length == AlignUp(width, 4); UnswizzleImage packs each
+    // layer/slice as blocks_x * blocks_y blocks (NumBlocks << bpp_log2) with no extra padding.
+    ASSERT(copy.buffer_row_length == blocks_x * BLOCK_SIZE);
     const u32 pitch = width * out_bpp;
     const size_t output_slice_size = static_cast<size_t>(pitch) * height;
     size_t input_offset = 0;
