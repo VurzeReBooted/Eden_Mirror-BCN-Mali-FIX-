@@ -28,6 +28,22 @@
 
 namespace VideoCommon {
 
+/// Host memory estimate charged to total_used_memory. Used by both RegisterImage and DeleteImage
+/// so the accounting stays symmetric.
+[[nodiscard]] inline u64 HostSizeEstimate(const ImageBase& image) {
+    if (True(image.flags & ImageFlagBits::BcnAstcTranscode)) {
+        // Exact ASTC footprint; TranscodedAstcSize would estimate an RGBA8 expansion instead.
+        return image.converted_size_bytes;
+    }
+    u64 size = (std::max)(image.guest_size_bytes, image.unswizzled_size_bytes);
+    if ((VideoCore::Surface::IsPixelFormatASTC(image.info.format) &&
+         True(image.flags & ImageFlagBits::AcceleratedUpload)) ||
+        True(image.flags & ImageFlagBits::Converted)) {
+        size = VideoCore::Surface::TranscodedAstcSize(size, image.info.format);
+    }
+    return size;
+}
+
 using Tegra::Texture::TICEntry;
 using Tegra::Texture::TSCEntry;
 using VideoCore::Surface::GetFormatType;
@@ -597,6 +613,11 @@ void TextureCache<P>::WriteMemory(DAddr cpu_addr, size_t size) {
 
 template <class P>
 bool TextureCache<P>::IsDownloadable(const ImageBase& image) const noexcept {
+    if (True(image.flags & ImageFlagBits::BcnAstcTranscode)) {
+        // The host holds ASTC blocks that cannot be swizzled back into guest BCn memory, and
+        // the download staging buffer is sized for the guest layout.
+        return false;
+    }
     if (!image.IsSafeGpuCopy()) {
         return false;
     }
@@ -1135,6 +1156,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     const bool gpu_unswizzle_enabled = Settings::values.gpu_unswizzle_enabled.GetValue();
 
     if (gpu_unswizzle_enabled &&
+        False(image.flags & ImageFlagBits::BcnAstcTranscode) && // GPU path writes raw BCn blocks
         IsPixelFormatBCn(image.info.format) &&
         image.info.type == ImageType::e3D &&
         image.info.resources.levels == 1 &&
@@ -1169,7 +1191,8 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
-        ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
+        ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies,
+                     True(image.flags & ImageFlagBits::BcnAstcTranscode));
         image.UploadMemory(staging, copies);
     } else {
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
@@ -1357,12 +1380,13 @@ void TextureCache<P>::QueueAsyncDecode(Image& image, ImageId image_id) {
     auto copies = UnswizzleImage(*gpu_memory, image.gpu_addr, image.info, swizzle_data, local_unswizzle_data_buffer);
     const size_t out_size = MapSizeBytes(image);
 
-    auto func = [out_size, copies, info = image.info,
+    const bool bcn_astc = True(image.flags & ImageFlagBits::BcnAstcTranscode);
+    auto func = [out_size, copies, info = image.info, bcn_astc,
                  input = std::move(local_unswizzle_data_buffer),
                  async_decode = decode_ptr]() mutable {
         async_decode->decoded_data.resize_destructive(out_size);
         std::span copies_span{copies.data(), copies.size()};
-        ConvertImage(input, info, async_decode->decoded_data, copies_span);
+        ConvertImage(input, info, async_decode->decoded_data, copies_span, bcn_astc);
 
         // TODO: Do we need this lock?
         std::unique_lock lock{async_decode->mutex};
@@ -2166,13 +2190,7 @@ void TextureCache<P>::RegisterImage(ImageId image_id) {
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
     image.flags |= ImageFlagBits::Registered;
-    u64 tentative_size = (std::max)(image.guest_size_bytes, image.unswizzled_size_bytes);
-    if ((IsPixelFormatASTC(image.info.format) &&
-         True(image.flags & ImageFlagBits::AcceleratedUpload)) ||
-        True(image.flags & ImageFlagBits::Converted)) {
-        tentative_size = TranscodedAstcSize(tentative_size, image.info.format);
-    }
-    total_used_memory += Common::AlignUp(tentative_size, 1024);
+    total_used_memory += Common::AlignUp(HostSizeEstimate(image), 1024);
     image.lru_index = lru_cache.Insert(image_id, frame_tick);
 
     ForEachGPUPage(image.gpu_addr, image.guest_size_bytes, [this, image_id](u64 page) {
@@ -2338,13 +2356,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     if (image.HasScaled()) {
         total_used_memory -= GetScaledImageSizeBytes(image);
     }
-    u64 tentative_size = (std::max)(image.guest_size_bytes, image.unswizzled_size_bytes);
-    if ((IsPixelFormatASTC(image.info.format) &&
-         True(image.flags & ImageFlagBits::AcceleratedUpload)) ||
-        True(image.flags & ImageFlagBits::Converted)) {
-        tentative_size = TranscodedAstcSize(tentative_size, image.info.format);
-    }
-    total_used_memory -= Common::AlignUp(tentative_size, 1024);
+    total_used_memory -= Common::AlignUp(HostSizeEstimate(image), 1024);
     const GPUVAddr gpu_addr = image.gpu_addr;
     const auto alloc_it = image_allocs_table.find(gpu_addr);
     if (alloc_it == image_allocs_table.end()) {

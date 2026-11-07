@@ -393,6 +393,12 @@ FN_MAX_LIMIT_LIST
         return features.features.textureCompressionBC;
     }
 
+    /// Returns true if BC1/2/3/7 textures are re-encoded to ASTC 4x4 on this device. Latched at
+    /// device creation (host formats of live images depend on it).
+    bool IsBcnAstcTranscodeEnabled() const {
+        return is_bcn_astc_transcode_enabled;
+    }
+
     /// Returns true if ETC2 is natively supported.
     bool IsOptimalEtc2Supported() const {
         return features.features.textureCompressionETC2;
@@ -1137,6 +1143,9 @@ private:
     /// Returns true if ASTC textures are natively supported.
     bool ComputeIsOptimalAstcSupported() const;
 
+    /// Returns true if BCn -> ASTC 4x4 transcoding can be used on this device.
+    bool ComputeIsBcnAstcTranscodeEnabled() const;
+
     /// Returns true if the device natively supports blitting depth stencil images.
     bool TestDepthStencilBlits(VkFormat format) const;
 
@@ -1215,6 +1224,7 @@ private:
 
     // Misc features
     bool is_optimal_astc_supported{};          ///< Support for all guest ASTC formats.
+    bool is_bcn_astc_transcode_enabled{};      ///< BC1/2/3/7 are re-encoded to ASTC 4x4.
     bool is_blit_depth24_stencil8_supported{}; ///< Support for blitting from and to D24S8.
     bool is_blit_depth32_stencil8_supported{}; ///< Support for blitting from and to D32S8.
     bool is_warp_potentially_bigger{};         ///< Host warp size can be bigger than guest.

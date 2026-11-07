@@ -116,6 +116,11 @@ constexpr bool IsZetaFormat(PixelFormat pixel_format) {
     return pixel_format >= PixelFormat::MaxColorFormat && pixel_format < PixelFormat::MaxDepthStencilFormat;
 }
 
+bool UsesBcnAstcTranscode(const Device& device, PixelFormat pixel_format) {
+    return !device.IsOptimalBcnSupported() && device.IsBcnAstcTranscodeEnabled() &&
+           VideoCore::Surface::IsPixelFormatBcnAstcTranscodable(pixel_format);
+}
+
 FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with_srgb, PixelFormat pixel_format) {
     u32 const usage_attachable = 1 << 0;
     u32 const usage_storage = 1 << 1;
@@ -265,7 +270,11 @@ FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with
     }
     if (!device.IsOptimalBcnSupported() && VideoCore::Surface::IsPixelFormatBCn(pixel_format)) {
         // Transcode on hardware that doesn't support BCn natively
-        if (pixel_format == PixelFormat::BC4_SNORM) {
+        if (format_type != FormatType::Buffer && UsesBcnAstcTranscode(device, pixel_format)) {
+            // Re-encoded to ASTC 4x4: same 4x4 block footprint, never attachable nor storage.
+            tuple.format = is_srgb ? VK_FORMAT_ASTC_4x4_SRGB_BLOCK : VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+            tuple.usage = 0;
+        } else if (pixel_format == PixelFormat::BC4_SNORM) {
             tuple.format = VK_FORMAT_R8_SNORM;
         } else if (pixel_format == PixelFormat::BC4_UNORM) {
             tuple.format = VK_FORMAT_R8_UNORM;

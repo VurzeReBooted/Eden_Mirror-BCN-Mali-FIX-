@@ -215,6 +215,9 @@ SurfaceType GetFormatType(PixelFormat pixel_format);
 bool HasAlpha(PixelFormat pixel_format);
 bool IsPixelFormatASTC(PixelFormat format);
 bool IsPixelFormatBCn(PixelFormat format);
+
+/// Returns true for the BCn formats that can be re-encoded to ASTC 4x4 (BC1, BC2, BC3, BC7).
+bool IsPixelFormatBcnAstcTranscodable(PixelFormat format);
 bool IsPixelFormatETC2(PixelFormat format);
 bool IsPixelFormatSRGB(PixelFormat format);
 bool IsPixelFormatInteger(PixelFormat format);

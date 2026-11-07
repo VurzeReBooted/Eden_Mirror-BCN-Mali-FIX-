@@ -178,8 +178,10 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
         flags |= VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
     }
     const auto [samples_x, samples_y] = VideoCommon::SamplesLog2(info.num_samples);
+    // Transcoded BCn images are ASTC on the host, which can never be a storage image.
     const bool allow_storage =
-        info.num_samples == 1 || device.IsStorageImageMultisampleSupported();
+        (info.num_samples == 1 || device.IsStorageImageMultisampleSupported()) &&
+        !MaxwellToVK::UsesBcnAstcTranscode(device, info.format);
     return VkImageCreateInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = nullptr,
@@ -960,6 +962,17 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
                 const auto view_info =
                     MaxwellToVK::SurfaceFormat(device, FormatType::Optimal, true, view_format);
                 view_formats[index_a].push_back(view_info.format);
+            }
+        }
+        if (MaxwellToVK::UsesBcnAstcTranscode(device, image_format)) {
+            // BC1/BC2/BC3 have no view class pairing UNORM with SRGB, but the images are created
+            // as ASTC UNORM and viewed as ASTC SRGB: both must be listed (and the image mutable).
+            for (const VkFormat astc_format :
+                 {VK_FORMAT_ASTC_4x4_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_SRGB_BLOCK}) {
+                auto& list = view_formats[index_a];
+                if (std::find(list.begin(), list.end(), astc_format) == list.end()) {
+                    list.push_back(astc_format);
+                }
             }
         }
     }
@@ -1950,6 +1963,20 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
     if (IsPixelFormatBCn(info.format) && !runtime->device.IsOptimalBcnSupported()) {
         flags |= VideoCommon::ImageFlagBits::Converted;
         flags |= VideoCommon::ImageFlagBits::CostlyLoad;
+        if (MaxwellToVK::UsesBcnAstcTranscode(runtime->device, info.format)) {
+            // Same predicate that picked the host ASTC format in MakeImageCreateInfo. The base
+            // class computed the RGBA8 size without device knowledge; replace it with the real one.
+            flags |= VideoCommon::ImageFlagBits::BcnAstcTranscode;
+            converted_size_bytes = VideoCommon::CalculateBcnAstcSizeBytes(info);
+            // Re-encoding is far slower than RGBA8 decoding: move big textures off the render
+            // thread (small ones stay synchronous to avoid pop-in).
+            constexpr u64 AsyncTranscodeMinTexels = 256 * 256;
+            if (static_cast<u64>(info.size.width) * static_cast<u64>(info.size.height) *
+                    static_cast<u64>(info.size.depth) >=
+                AsyncTranscodeMinTexels) {
+                flags |= VideoCommon::ImageFlagBits::AsynchronousDecode;
+            }
+        }
     }
     if (runtime->device.HasDebuggingToolAttached()) {
         original_image.SetObjectNameEXT(VideoCommon::Name(*this).c_str());

@@ -314,6 +314,7 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
     X(vkDestroySurfaceKHR);
     X(vkGetPhysicalDeviceFeatures2);
     X(vkGetPhysicalDeviceFormatProperties2);
+    X(vkGetPhysicalDeviceImageFormatProperties);
     X(vkGetPhysicalDeviceProperties2);
     X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
     X(vkGetPhysicalDeviceSurfaceFormatsKHR);
@@ -933,6 +934,18 @@ VkFormatProperties PhysicalDevice::GetFormatProperties(VkFormat format) const no
     VkFormatProperties properties;
     dld->vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
     return properties;
+}
+
+VkResult PhysicalDevice::GetImageFormatProperties(VkFormat format, VkImageType type,
+                                                  VkImageTiling tiling, VkImageUsageFlags usage,
+                                                  VkImageCreateFlags flags) const noexcept {
+    if (!dld->vkGetPhysicalDeviceImageFormatProperties) {
+        // Entry point failed to load; callers treat any non-success result as "unsupported".
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkImageFormatProperties properties;
+    return dld->vkGetPhysicalDeviceImageFormatProperties(physical_device, format, type, tiling,
+                                                         usage, flags, &properties);
 }
 
 VkFormatProperties3 PhysicalDevice::GetFormatProperties3(VkFormat format) const noexcept {

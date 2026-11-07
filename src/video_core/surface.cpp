@@ -314,6 +314,22 @@ bool IsPixelFormatASTC(PixelFormat format) {
     }
 }
 
+bool IsPixelFormatBcnAstcTranscodable(PixelFormat format) {
+    switch (format) {
+    case PixelFormat::BC1_RGBA_UNORM:
+    case PixelFormat::BC1_RGBA_SRGB:
+    case PixelFormat::BC2_UNORM:
+    case PixelFormat::BC2_SRGB:
+    case PixelFormat::BC3_UNORM:
+    case PixelFormat::BC3_SRGB:
+    case PixelFormat::BC7_UNORM:
+    case PixelFormat::BC7_SRGB:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool IsPixelFormatBCn(PixelFormat format) {
     switch (format) {
     case PixelFormat::BC1_RGBA_UNORM:

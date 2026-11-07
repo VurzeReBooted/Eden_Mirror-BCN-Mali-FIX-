@@ -45,6 +45,10 @@ enum class ImageFlagBits : u32 {
 
     AsynchronousDecode = 1 << 16,
     IsDecoding = 1 << 17, ///< Is currently being decoded asynchronously.
+
+    /// Guest BC1/2/3/7 is re-encoded to host ASTC 4x4. Always set together with Converted; makes
+    /// converted_size_bytes the ASTC footprint and changes what ConvertImage emits.
+    BcnAstcTranscode = 1 << 18,
 };
 DECLARE_ENUM_FLAG_OPERATORS(ImageFlagBits)
 

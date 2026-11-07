@@ -36,6 +36,9 @@ struct OverlapResult {
 
 [[nodiscard]] u32 CalculateConvertedSizeBytes(const ImageInfo& info) noexcept;
 
+/// Host size of a BC1/2/3/7 image that is re-encoded to ASTC 4x4 (16 bytes per 4x4 block).
+[[nodiscard]] u32 CalculateBcnAstcSizeBytes(const ImageInfo& info) noexcept;
+
 [[nodiscard]] u32 CalculateLayerStride(const ImageInfo& info) noexcept;
 
 [[nodiscard]] u32 CalculateLayerSize(const ImageInfo& info) noexcept;
@@ -69,8 +72,9 @@ struct OverlapResult {
     Tegra::MemoryManager& gpu_memory, GPUVAddr gpu_addr, const ImageInfo& info,
     std::span<const u8> input, std::span<u8> output);
 
+/// When bcn_astc is true, BC1/2/3/7 inputs are re-encoded to ASTC 4x4 instead of decoded to RGBA8.
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
-                  std::span<BufferImageCopy> copies);
+                  std::span<BufferImageCopy> copies, bool bcn_astc = false);
 
 [[nodiscard]] boost::container::small_vector<BufferImageCopy, 16> FullDownloadCopies(
     const ImageInfo& info);

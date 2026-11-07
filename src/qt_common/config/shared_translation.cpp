@@ -220,6 +220,12 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "intermediate format: RGBA8.\n"
               "BC1/BC3: The intermediate format will be recompressed to BC1 or BC3 format,\n"
               " saving VRAM but degrading image quality."));
+    INSERT(Settings, bcn_astc_transcode, tr("Transcode BCn textures to ASTC (Vulkan)"),
+           tr("On GPUs without BCn but with ASTC support, re-encode BC1/BC2/BC3/BC7 textures to "
+              "ASTC 4x4 instead of decoding them to RGBA8, using 1-2x instead of 4-8x the "
+              "memory.\nRe-encoding is lossy (BC7 is affected most) and takes CPU time; large "
+              "textures are encoded in the background. Takes effect after restarting the "
+              "emulation."));
     INSERT(Settings, frame_pacing_mode, tr("Frame Pacing Mode (Vulkan only)"),
            tr("Controls how the emulator manages frame pacing to reduce stuttering and make the "
               "frame rate smoother and more consistent."));

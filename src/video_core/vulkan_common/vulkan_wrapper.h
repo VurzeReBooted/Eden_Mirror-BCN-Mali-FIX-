@@ -181,6 +181,7 @@ struct InstanceDispatch {
     PFN_vkGetPhysicalDeviceFeatures2 vkGetPhysicalDeviceFeatures2{};
     PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties{};
     PFN_vkGetPhysicalDeviceFormatProperties2 vkGetPhysicalDeviceFormatProperties2{};
+    PFN_vkGetPhysicalDeviceImageFormatProperties vkGetPhysicalDeviceImageFormatProperties{};
     PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties{};
     PFN_vkGetPhysicalDeviceMemoryProperties2 vkGetPhysicalDeviceMemoryProperties2{};
     PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties{};
@@ -1193,6 +1194,10 @@ public:
     VkFormatProperties GetFormatProperties(VkFormat) const noexcept;
 
     VkFormatProperties3 GetFormatProperties3(VkFormat) const noexcept;
+
+    /// Returns VK_SUCCESS if the image format combination is supported, an error code otherwise.
+    VkResult GetImageFormatProperties(VkFormat format, VkImageType type, VkImageTiling tiling,
+                                      VkImageUsageFlags usage, VkImageCreateFlags flags) const noexcept;
 
     std::vector<VkExtensionProperties> EnumerateDeviceExtensionProperties() const;
 

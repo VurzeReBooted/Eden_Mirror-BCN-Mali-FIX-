@@ -607,6 +607,10 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
         }
     }
 
+    // Must run after the Adreno BCn patch above (it rewrites format_properties) and before any
+    // image is created: the result selects host formats baked into live images.
+    is_bcn_astc_transcode_enabled = ComputeIsBcnAstcTranscodeEnabled();
+
     sets_per_pool = 64;
     if (is_amd_driver) {
         // AMD drivers need a higher amount of Sets per Pool in certain circumstances like in XC2.
@@ -937,6 +941,60 @@ bool Device::ComputeIsOptimalAstcSupported() const {
             return false;
         }
     }
+    return true;
+}
+
+bool Device::ComputeIsBcnAstcTranscodeEnabled() const {
+    const auto fail = [](const char* reason) {
+        LOG_INFO(Render_Vulkan, "BCn->ASTC transcode disabled: {}", reason);
+        return false;
+    };
+    if (!Settings::values.bcn_astc_transcode.GetValue()) {
+        return fail("disabled in settings");
+    }
+    if (features.features.textureCompressionBC) {
+        return fail("BCn is natively supported");
+    }
+    // A patched driver (e.g. Adreno) can expose BCn formats without the feature bit.
+    const auto bc1_it = format_properties.find(VK_FORMAT_BC1_RGBA_UNORM_BLOCK);
+    if (bc1_it != format_properties.end() &&
+        (bc1_it->second.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0) {
+        return fail("BCn formats are usable through a driver patch");
+    }
+    if (!features.features.textureCompressionASTC_LDR) {
+        return fail("ASTC LDR is not supported");
+    }
+    if (!IsKhrImageFormatListSupported()) {
+        // Needed to create the UNORM image with an sRGB ASTC view (MUTABLE_FORMAT list).
+        return fail("VK_KHR_image_format_list is not supported");
+    }
+    const VkFormatFeatureFlags format_feature_usage{
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT};
+    constexpr std::array<VkFormat, 2> formats{VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+                                              VK_FORMAT_ASTC_4x4_SRGB_BLOCK};
+    constexpr VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    for (const VkFormat format : formats) {
+        const auto props = physical.GetFormatProperties(format);
+        if ((props.optimalTilingFeatures & format_feature_usage) != format_feature_usage) {
+            return fail("ASTC 4x4 format features are insufficient");
+        }
+        // Image creation flags mirror MakeImageCreateInfo/MakeImage in vk_texture_cache.cpp.
+        constexpr VkImageCreateFlags flags_2d = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+                                                VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+        constexpr VkImageCreateFlags flags_3d = flags_2d | VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
+        if (physical.GetImageFormatProperties(format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+                                              usage, flags_2d) != VK_SUCCESS) {
+            return fail("2D ASTC 4x4 images with mutable format are not supported");
+        }
+        if (physical.GetImageFormatProperties(format, VK_IMAGE_TYPE_3D, VK_IMAGE_TILING_OPTIMAL,
+                                              usage, flags_3d) != VK_SUCCESS) {
+            return fail("3D ASTC 4x4 images are not supported");
+        }
+    }
+    LOG_INFO(Render_Vulkan, "BCn textures will be transcoded to ASTC 4x4");
     return true;
 }
 

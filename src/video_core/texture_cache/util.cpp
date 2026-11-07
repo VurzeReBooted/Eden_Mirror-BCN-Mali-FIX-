@@ -34,6 +34,7 @@
 #include "video_core/texture_cache/samples_helper.h"
 #include "video_core/texture_cache/util.h"
 #include "video_core/textures/astc.h"
+#include "video_core/textures/astc_encode.h"
 #include "video_core/textures/bcn.h"
 #include "video_core/textures/decoders.h"
 
@@ -60,6 +61,7 @@ using VideoCore::Surface::DefaultBlockHeight;
 using VideoCore::Surface::DefaultBlockWidth;
 using VideoCore::Surface::IsCopyCompatible;
 using VideoCore::Surface::IsPixelFormatASTC;
+using VideoCore::Surface::IsPixelFormatSRGB;
 using VideoCore::Surface::IsViewCompatible;
 using VideoCore::Surface::PixelFormatFromDepthFormat;
 using VideoCore::Surface::PixelFormatFromRenderTargetFormat;
@@ -627,6 +629,14 @@ u32 CalculateConvertedSizeBytes(const ImageInfo& info) noexcept {
            ConvertedBytesPerBlock(info.format);
 }
 
+u32 CalculateBcnAstcSizeBytes(const ImageInfo& info) noexcept {
+    // Every guest BC1/2/3/7 block (4x4 texels) becomes exactly one 16 byte ASTC 4x4 block. Mips
+    // smaller than a block still cost one whole block, as NumBlocks rounds up.
+    const Extent2D tile_size = DefaultBlockSize(info.format);
+    return NumBlocksPerLayer(info, tile_size) * info.resources.layers *
+           Tegra::Texture::ASTC::AstcBlockBytes;
+}
+
 u32 CalculateLayerStride(const ImageInfo& info) noexcept {
     ASSERT(info.type != ImageType::Linear);
     const u32 layer_size = CalculateLayerSize(info);
@@ -923,7 +933,7 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
 }
 
 void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8> output,
-                  std::span<BufferImageCopy> copies) {
+                  std::span<BufferImageCopy> copies, bool bcn_astc) {
     u32 output_offset = 0;
     Common::ScratchBuffer<u8> decode_scratch;
 
@@ -982,6 +992,45 @@ void ConvertImage(std::span<const u8> input, const ImageInfo& info, std::span<u8
                 (aligned_plane_dim * copy.image_extent.depth * copy.image_subresource.num_layers) /
                 bpp_div;
             output_offset += static_cast<u32>(copy.buffer_size);
+        } else if (bcn_astc) {
+            const u32 width = copy.image_extent.width;
+            const u32 height = copy.image_extent.height;
+            const u32 slices = copy.image_extent.depth * copy.image_subresource.num_layers;
+            const size_t out_size = static_cast<size_t>(slices) *
+                                    Common::DivCeil(width, 4U) * Common::DivCeil(height, 4U) *
+                                    Tegra::Texture::ASTC::AstcBlockBytes;
+            ASSERT(output_offset % Tegra::Texture::ASTC::AstcBlockBytes == 0);
+            const auto out = output.subspan(output_offset, out_size);
+            const bool srgb = IsPixelFormatSRGB(info.format);
+            if (info.type == ImageType::Linear) {
+                // Pitch-linear rows are not tightly packed, which the decoders assume. Emit
+                // transparent-black ASTC void-extent blocks (an all-zero ASTC block is a reserved
+                // encoding) rather than reading garbage.
+                static constexpr std::array<u8, Tegra::Texture::ASTC::AstcBlockBytes> EMPTY_BLOCK{
+                    0xFC, 0xFD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0};
+                for (size_t i = 0; i + EMPTY_BLOCK.size() <= out.size(); i += EMPTY_BLOCK.size()) {
+                    std::ranges::copy(EMPTY_BLOCK, out.begin() + static_cast<std::ptrdiff_t>(i));
+                }
+            } else if (info.format == PixelFormat::BC1_RGBA_UNORM ||
+                       info.format == PixelFormat::BC1_RGBA_SRGB) {
+                Tegra::Texture::ASTC::TranscodeBC1ToAstc4x4(input_offset, width, height, slices,
+                                                            out, srgb);
+            } else {
+                // BC2/BC3/BC7: decode to RGBA8 first (copy still has the guest row length that
+                // DecompressBCn asserts on), then re-encode.
+                decode_scratch.resize_destructive(static_cast<size_t>(slices) * width * height * 4);
+                DecompressBCn(input_offset, decode_scratch, copy, info.format);
+                Tegra::Texture::ASTC::EncodeRGBA8ToAstc4x4(decode_scratch, width, height, slices,
+                                                           out, srgb);
+            }
+            output_offset += static_cast<u32>(out_size);
+            copy.buffer_size = out_size;
+            // The host format is block compressed: Vulkan requires bufferRowLength and
+            // bufferImageHeight to be multiples of the block size, so the RGBA8 values (mip
+            // width/height) set below must not be used.
+            copy.buffer_row_length = Common::AlignUp(width, 4U);
+            copy.buffer_image_height = Common::AlignUp(height, 4U);
+            continue;
         } else {
             DecompressBCn(input_offset, output.subspan(output_offset), copy, info.format);
             output_offset += copy.image_extent.width * copy.image_extent.height *

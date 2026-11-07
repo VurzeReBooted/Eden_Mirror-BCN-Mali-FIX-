@@ -47,6 +47,12 @@ struct FormatInfo {
 [[nodiscard]] FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with_srgb,
                                        PixelFormat pixel_format);
 
+/**
+ * Returns true when a guest BCn format is re-encoded to host ASTC 4x4 on this device. This is the
+ * single predicate shared by host format selection, image flags and size accounting.
+ */
+[[nodiscard]] bool UsesBcnAstcTranscode(const Device& device, PixelFormat pixel_format);
+
 VkShaderStageFlagBits ShaderStage(Shader::Stage stage);
 
 VkPrimitiveTopology PrimitiveTopology(const Device& device, Maxwell::PrimitiveTopology topology);
