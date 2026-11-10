@@ -631,7 +631,7 @@ struct Values {
 
     /// Re-encode BC1/2/3/7 textures to ASTC 4x4 on devices without BCn but with ASTC support,
     /// instead of decoding them to RGBA8 (4-8x the memory).
-    SwitchableSetting<bool> bcn_astc_transcode{linkage, true, "bcn_astc_transcode",
+    SwitchableSetting<bool> bcn_astc_transcode{linkage, false, "bcn_astc_transcode",
                                                Category::RendererAdvanced};
 
 

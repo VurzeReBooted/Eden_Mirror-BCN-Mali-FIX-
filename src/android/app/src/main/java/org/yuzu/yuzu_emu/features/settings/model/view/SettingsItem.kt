@@ -875,6 +875,13 @@ abstract class SettingsItem(
             )
             put(
                 SwitchSetting(
+                    BooleanSetting.BCN_ASTC_TRANSCODE,
+                    titleId = R.string.bcn_astc_transcode,
+                    descriptionId = R.string.bcn_astc_transcode_description
+                )
+            )
+            put(
+                SwitchSetting(
                     BooleanSetting.RESCALE_HACK,
                     titleId = R.string.rescale_hack,
                     descriptionId = R.string.rescale_hack_description

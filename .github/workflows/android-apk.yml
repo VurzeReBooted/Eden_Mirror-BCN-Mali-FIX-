@@ -26,6 +26,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install glslang (host shader compiler required by CMake)
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+
       - name: Accept Android SDK licenses
         run: yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 

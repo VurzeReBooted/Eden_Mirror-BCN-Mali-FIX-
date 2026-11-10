@@ -595,6 +595,8 @@
     <string name="skip_cpu_inner_invalidation_description">Skips certain CPU-side cache invalidations during memory updates, reducing CPU usage and improving it\'s performance. This may cause glitches or crashes on some games.</string>
     <string name="fix_bloom_effects">Fix Bloom Effects</string>
     <string name="fix_bloom_effects_description">Removes bloom in Burnout.</string>
+    <string name="bcn_astc_transcode">Transcode BCn textures to ASTC (experimental)</string>
+    <string name="bcn_astc_transcode_description">On GPUs without BCn support (e.g. Mali), re-encodes BC1/BC2/BC3/BC7 textures to ASTC instead of decoding them to RGBA8. Uses much less memory but is lossy and slower to load. Requires restarting the game.</string>
     <string name="emulate_bgr565">Emulate BGR565</string>
     <string name="emulate_bgr565_description">Fixes problems with inverted colors in games or strange artifacts or strange shadows.</string>
     <string name="rescale_hack">Enable Legacy Rescale Pass</string>
