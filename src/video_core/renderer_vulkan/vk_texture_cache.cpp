@@ -964,6 +964,17 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
                 view_formats[index_a].push_back(view_info.format);
             }
         }
+        if (IsPixelFormatBCn(image_format) && !device.IsOptimalBcnSupported()) {
+            // Converted sRGB BC1/BC2/BC3 images are created with the UNORM host format but viewed
+            // as sRGB; they have no UNORM/sRGB view class, so list the creation format explicitly
+            // to make the image mutable.
+            const VkFormat create_format =
+                MaxwellToVK::SurfaceFormat(device, FormatType::Optimal, false, image_format).format;
+            auto& list = view_formats[index_a];
+            if (std::find(list.begin(), list.end(), create_format) == list.end()) {
+                list.push_back(create_format);
+            }
+        }
         if (MaxwellToVK::UsesBcnAstcTranscode(device, image_format)) {
             // BC1/BC2/BC3 have no view class pairing UNORM with SRGB, but the images are created
             // as ASTC UNORM and viewed as ASTC SRGB: both must be listed (and the image mutable).
